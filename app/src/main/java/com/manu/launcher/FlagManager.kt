@@ -2,12 +2,9 @@ package com.manu.launcher
 
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuRemoteProcess
 import java.io.File
 
-/**
- * Real write of ClientAppSettings.json into /data/local/tmp/
- * Supports Root (su) and Shizuku.
- */
 object FlagManager {
 
     private const val TARGET = "/data/local/tmp/ClientAppSettings.json"
@@ -21,7 +18,7 @@ object FlagManager {
 
     fun shizukuReady(): Boolean = try {
         Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     } catch (_: Exception) {
         false
     }
@@ -32,21 +29,17 @@ object FlagManager {
         else -> "нет (нужен Root или Shizuku)"
     }
 
-    /** Request Shizuku permission if not granted yet */
-    fun requestShizukuPermission() {
-        try {
-            if (Shizuku.pingBinder() &&
-                Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED
-            ) {
-                Shizuku.requestPermission(0)
-            }
-        } catch (_: Exception) {}
+    private fun runShizukuCmd(cmd: String): Process {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(null, arrayOf("sh", "-c", cmd), null, null) as ShizukuRemoteProcess
     }
 
-    /**
-     * Write json via elevated process.
-     * IMPORTANT: pass externalCacheDir ?: cacheDir so Shizuku can read the file.
-     */
     fun writeFlags(json: String, cacheDir: File, log: (String) -> Unit = {}): Boolean {
         val local = File(cacheDir, "ClientAppSettings.json")
         return try {
@@ -54,7 +47,7 @@ object FlagManager {
             val cmd = "cp '${local.absolutePath}' $TARGET && chmod 644 $TARGET && echo OK"
             val proc = when {
                 hasRoot() -> Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                shizukuReady() -> Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                shizukuReady() -> runShizukuCmd(cmd)
                 else -> {
                     log("нет Root и нет Shizuku")
                     return false
@@ -76,7 +69,7 @@ object FlagManager {
         return try {
             val proc = when {
                 hasRoot() -> Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                shizukuReady() -> Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                shizukuReady() -> runShizukuCmd(cmd)
                 else -> return false
             }
             val code = proc.waitFor()
@@ -88,9 +81,12 @@ object FlagManager {
         }
     }
 
-    fun readFlags(): String = try {
-        File(TARGET).takeIf { it.exists() }?.readText() ?: ""
-    } catch (_: Exception) {
-        ""
+    fun readFlags(): String {
+        return try {
+            val f = File(TARGET)
+            if (f.exists()) f.readText() else ""
+        } catch (_: Exception) {
+            ""
+        }
     }
 }
