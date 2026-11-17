@@ -23,6 +23,17 @@ object FlagManager {
         false
     }
 
+    fun requestShizukuPermission(requestCode: Int = 0) {
+        try {
+            if (Shizuku.pingBinder() &&
+                Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED
+            ) {
+                Shizuku.requestPermission(requestCode)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     fun accessMode(): String = when {
         hasRoot() -> "Root"
         shizukuReady() -> "Shizuku"
